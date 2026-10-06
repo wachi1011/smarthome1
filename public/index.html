@@ -143,7 +143,7 @@
     </div>
 
     <div class="grid">
-      <!-- Relay 1 (Channel 0) -->
+      <!-- Relay 1 (Channel 0 - GPIO 26) -->
       <div class="card" id="card-0">
         <h3>Relay 1 (GPIO 26)</h3>
         <label class="switch">
@@ -152,7 +152,7 @@
         </label>
       </div>
 
-      <!-- Relay 2 (Channel 1) -->
+      <!-- Relay 2 (Channel 1 - GPIO 25) -->
       <div class="card" id="card-1">
         <h3>Relay 2 (GPIO 25)</h3>
         <label class="switch">
@@ -161,7 +161,7 @@
         </label>
       </div>
 
-      <!-- Relay 3 (Channel 2) -->
+      <!-- Relay 3 (Channel 2 - GPIO 33) -->
       <div class="card" id="card-2">
         <h3>Relay 3 (GPIO 33)</h3>
         <label class="switch">
@@ -170,7 +170,7 @@
         </label>
       </div>
 
-      <!-- Relay 4 (Channel 3) -->
+      <!-- Relay 4 (Channel 3 - GPIO 32) -->
       <div class="card" id="card-3">
         <h3>Relay 4 (GPIO 32)</h3>
         <label class="switch">
@@ -187,7 +187,7 @@
   </div>
 
   <script>
-    // ตรวจสอบและเลือก Protocol (ws:// หรือ wss://) ตามลักษณะ Host
+    // ตรวจสอบและเลือก Protocol (ws:// หรือ wss://) อัตโนมัติ
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/esp`;
     let socket;
@@ -199,7 +199,6 @@
         const statusElem = document.getElementById('wsStatus');
         statusElem.textContent = 'เชื่อมต่อแล้ว';
         statusElem.className = 'status-online';
-        // เมื่อต่อสำเร็จ ขอสถานะปัจจุบันจาก Server
         socket.send(JSON.stringify({ type: 'GET_STATE' }));
       };
 
@@ -207,17 +206,14 @@
         try {
           const data = JSON.parse(event.data);
           
-          // รับอาร์เรย์สถานะ relays ทั้งหมด
           if (data.relays && Array.isArray(data.relays)) {
             data.relays.forEach((state, index) => {
               if (index < 4) updateUI(index, state);
             });
           } 
-          // รับสั่งการรายช่อง
           else if (data.type === 'CONTROL') {
             updateUI(data.ch, data.state);
           } 
-          // รับสั่งการทั้งหมด
           else if (data.type === 'CONTROL_ALL') {
             for (let i = 0; i < 4; i++) {
               updateUI(i, data.state);
@@ -230,4 +226,43 @@
 
       socket.onclose = () => {
         const statusElem = document.getElementById('wsStatus');
-        statusElem.textContent = 'ขาดการเชื่อมต่อ (กำลังต่อ
+        statusElem.textContent = 'ขาดการเชื่อมต่อ (กำลังต่อใหม่...)';
+        statusElem.className = 'status-offline';
+        setTimeout(connectWebSocket, 3000);
+      };
+
+      socket.onerror = (err) => {
+        console.error('WebSocket Error:', err);
+      };
+    }
+
+    function updateUI(ch, state) {
+      const toggle = document.getElementById(`relay-${ch}`);
+      const card = document.getElementById(`card-${ch}`);
+      if (toggle) toggle.checked = state;
+      if (card) {
+        if (state) card.classList.add('active');
+        else card.classList.remove('active');
+      }
+    }
+
+    function toggleRelay(ch, state) {
+      fetch('/api/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ch: ch, state: state })
+      }).catch(err => console.error('Fetch error:', err));
+    }
+
+    function controlAll(state) {
+      fetch('/api/control-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: state })
+      }).catch(err => console.error('Fetch error:', err));
+    }
+
+    connectWebSocket();
+  </script>
+</body>
+</html>
