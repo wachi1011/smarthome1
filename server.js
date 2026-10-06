@@ -1,10 +1,13 @@
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
-
+const path = require('path')
 const app = express();
 const server = http.createServer(app);
-
+app.use(express.static(__dirname));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 // สร้าง WebSocket Server ให้รับ Path /esp ตามที่ ESP32 ต่อเข้ามา
 const wss = new WebSocket.Server({ server, path: '/esp' });
 
