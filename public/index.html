@@ -5,65 +5,65 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LDR & Relay Control Dashboard</title>
     <style>
-        body { font-family: sans-serif; text-align: center; margin-top: 50px; background: #f4f4f9; }
-        .card { background: white; padding: 20px; margin: 10px auto; width: 300px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; background: #007bff; color: white; }
-        button.active { background: #28a745; }
+        body { font-family: sans-serif; text-align: center; margin-top: 30px; background: #f4f4f9; }
+        .card { background: white; padding: 20px; margin: 10px auto; width: 320px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .status-badge { padding: 8px 15px; font-size: 16px; border-radius: 5px; display: inline-block; color: white; background: #dc3545; }
+        .status-badge.active { background: #28a745; }
     </style>
 </head>
 <body>
     <h1>ระบบควบคุมรีเลย์ (LDR Control)</h1>
+    
     <div class="card">
         <h3>ค่าแสงจาก LDR</h3>
-        <p id="ldr-val">กำลังโหลด...</p>
+        <p id="ldr-val" style="font-size: 24px; font-weight: bold;">กำลังโหลด...</p>
+        <p>สถานะแดดก่อน 11 โมง: <span id="sun-status">-</span></p>
     </div>
 
     <div class="card">
-        <h3>รีเลย์ Pin 32</h3>
-        <button onclick="toggleRelay('relay1')" id="btn-relay1">ปิดอยู่</button>
+        <h3>รีเลย์ Pin 32 (ตัวที่ 1)</h3>
+        <div id="badge-relay1" class="status-badge">ปิดอยู่</div>
     </div>
 
     <div class="card">
-        <h3>รีเลย์ Pin 33</h3>
-        <button onclick="toggleRelay('relay2')" id="btn-relay2">ปิดอยู่</button>
+        <h3>รีเลย์ Pin 33 (ตัวที่ 2)</h3>
+        <div id="badge-relay2" class="status-badge">ปิดอยู่</div>
+    </div>
+
+    <div class="card">
+        <h3>รีเลย์ Pin 25 (ตัวที่ 3 - LDR Control)</h3>
+        <div id="badge-relay3" class="status-badge">ปิดอยู่</div>
     </div>
 
     <script>
         async function fetchStatus() {
-            const res = await fetch('/api/status');
-            const data = await res.json();
-            document.getElementById('ldr-val').innerText = data.ldrValue;
-            
-            // อัปเดตสถานะปุ่มตามค่าจริง
-            updateButton('relay1', data.relayState.relay1);
-            updateButton('relay2', data.relayState.relay2);
-        }
-
-        async function toggleRelay(relay) {
-            const res = await fetch('/api/status');
-            const data = await res.json();
-            const currentState = data.relayState[relay];
-
-            await fetch('/api/control', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ relay, state: !currentState })
-            });
-            fetchStatus();
-        }
-
-        function updateButton(relay, state) {
-            const btn = document.getElementById(`btn-${relay}`);
-            if (state) {
-                btn.innerText = "เปิดทำงาน";
-                btn.className = "active";
-            } else {
-                btn.innerText = "ปิดอยู่";
-                btn.className = "";
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                
+                document.getElementById('ldr-val').innerText = data.ldrValue;
+                document.getElementById('sun-status').innerText = data.isSunnyMorning ? "แดดดี (มีผลช่วง 11:00-14:00)" : "แดดน้อย/ปกติ";
+                
+                updateStatusBadge('relay1', data.relayState.relay1);
+                updateStatusBadge('relay2', data.relayState.relay2);
+                updateStatusBadge('relay3', data.relayState.relay3);
+            } catch (error) {
+                console.error("Error fetching status:", error);
             }
         }
 
-        setInterval(fetchStatus, 2000); // อัปเดตข้อมูลทุกๆ 2 วินาที
+        function updateStatusBadge(relay, state) {
+            const badge = document.getElementById(`badge-${relay}`);
+            if (state) {
+                badge.innerText = "เปิดทำงาน";
+                badge.className = "status-badge active";
+            } else {
+                badge.innerText = "ปิดอยู่";
+                badge.className = "status-badge";
+            }
+        }
+
+        setInterval(fetchStatus, 2000); // อัปเดตข้อมูลทุก 2 วินาที
         fetchStatus();
     </script>
 </body>
