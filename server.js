@@ -6,7 +6,6 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// ตัวแปรควบคุมโหมด Auto Schedule และสถานะแอร์
 let autoScheduleEnabled = true; 
 let isSunnyMorning = false;
 let checkedToday = false; 
@@ -14,7 +13,7 @@ let checkedToday = false;
 let airState = {
   air1: false, // Pin 32
   air2: false, // Pin 33
-  air3: false  // Pin 25 (ควบคุมด้วย LDR ช่วง 11:00-14:00)
+  air3: false  // Pin 25
 };
 
 function updateSchedule() {
@@ -26,44 +25,88 @@ function updateSchedule() {
   const minutes = thaiDate.getMinutes();
   const currentTimeDecimal = hours + minutes / 60;
 
-  // จำลองค่าแสง LDR (0 - 4095)
+  // จำลองค่าแสง LDR (0 - 4095) ในหน้างานจริงเปลี่ยนเปน analogRead()
   const ldrValue = Math.floor(Math.random() * 4096);
   const LDR_THRESHOLD = 2000; 
 
-  // 1. ตรวจสอบค่าแสงตอน 10:50 น. พอดี
+  // 1. LDR วัดแสงช่วงเวลา 10:50 น. (10:50 - 10:59 น.) เพื่อเตรียมให้ตัวที่ 3 ทำงานตอน 11:00 น.
   if (hours === 10 && minutes >= 50 && !checkedToday) {
     isSunnyMorning = (ldrValue >= LDR_THRESHOLD);
     checkedToday = true;
   }
 
-  // รีเซ็ตสถานะตอนเที่ยงคืน
+  // รีเซ็ตสถานะการเช็กตอนเที่ยงคืน
   if (hours === 0 && minutes === 0) {
     checkedToday = false;
     isSunnyMorning = false;
   }
 
-  // ถ้าเปิดโหมด Auto Schedule ให้คำนวณตามเวลาและ LDR
+  // ถ้าเปิดโหมด Auto Schedule
   if (autoScheduleEnabled) {
-    // ช่วง 11:00 - 14:00 น.
-    if (currentTimeDecimal >= 11.0 && currentTimeDecimal < 14.0) {
+    // กำหนดสถานะเริ่มต้นเป็นปิดทั้งหมดก่อน
+    airState.air1 = false;
+    airState.air2 = false;
+    airState.air3 = false;
+
+    // แปลงเวลาปัจจุบันเป็นนาทีตั้งแต่เที่ยงคืน เพื่อให้เปรียบเทียบช่วงเวลาได้แม่นยำ
+    const totalMinutes = hours * 60 + minutes;
+
+    // 08:00 - 08:30 น. -> Air 1 ทำงาน
+    if (totalMinutes >= (8 * 60) && totalMinutes < (8 * 60 + 30)) {
+      airState.air1 = true;
+    }
+    // 08:30 - 09:00 น. -> Air 2 ทำงาน
+    else if (totalMinutes >= (8 * 60 + 30) && totalMinutes < (9 * 60)) {
+      airState.air2 = true;
+    }
+    // 09:00 - 09:30 น. -> Air 1 ทำงาน
+    else if (totalMinutes >= (9 * 60) && totalMinutes < (9 * 60 + 30)) {
+      airState.air1 = true;
+    }
+    // 09:30 - 10:00 น. -> Air 2 ทำงาน
+    else if (totalMinutes >= (9 * 60 + 30) && totalMinutes < (10 * 60)) {
+      airState.air2 = true;
+    }
+    // 10:00 - 11:00 น. -> Air 1 ทำงาน (และช่วง 10:00 - 10:30 น. ให้ Air 2 ทำงานพร้อมกัน)
+    else if (totalMinutes >= (10 * 60) && totalMinutes < (11 * 60)) {
+      airState.air1 = true;
+      if (totalMinutes < (10 * 60 + 30)) {
+        airState.air2 = true; // ทำงานพร้อมกันช่วง 10:00 - 10:30 น.
+      }
+    }
+    // 11:00 - 14:00 น. -> Air 3 ทำงาน (อิงจาก LDR ที่วัดตอน 10:50 น.)
+    else if (totalMinutes >= (11 * 60) && totalMinutes < (14 * 60)) {
       if (isSunnyMorning) {
-        // แสงดี -> เปิด Air 3 / ปิด Air 1, Air 2
-        airState.air3 = true;
+        airState.air3 = true; // ถ้าแดดถึงเกณฑ์ Air 3 ทำงาน
+      } else {
+        // ถ้าแดดไม่ถึงเกณฑ์ ให้ Air 1 และ Air 2 ทำงานปกติแทน (ยกเว้นช่วง 12:00-14:00 ที่ต้องหยุดพักตามโจทย์)
+        if (totalMinutes < (12 * 60)) {
+          airState.air1 = true;
+          airState.air2 = true;
+        }
+      }
+      
+      // เงื่อนไขเพิ่มเติม: ระหว่างเวลา 12:00 - 14:00 น. ให้ Air 1 กับ Air 2 หยุดพัก (เป็น 0 เสมอ)
+      if (totalMinutes >= (12 * 60)) {
         airState.air1 = false;
         airState.air2 = false;
-      } else {
-        // แสงน้อย -> ปิด Air 3 / เปิด Air 1 และ Air 2 พร้อมกัน
-        airState.air3 = false;
-        airState.air1 = true;
-        airState.air2 = true;
       }
-    } else {
-      // นอกช่วง 11:00 - 14:00 น. (เช่นช่วงอื่นๆ ตามตารางกราฟ)
+    }
+    // 14:00 - 14:30 น. -> Air 1 ทำงาน (Air 3 หยุดพัก)
+    else if (totalMinutes >= (14 * 60) && totalMinutes < (14 * 60 + 30)) {
+      airState.air1 = true;
       airState.air3 = false;
-      // Air 1 และ Air 2 ทำงานสลับหรือพร้อมกันตามช่วงเวลาในกราฟ
-      const activePeriod = Math.floor(currentTimeDecimal * 2) % 2 === 0;
-      airState.air1 = activePeriod;
-      airState.air2 = activePeriod;
+    }
+    // 14:30 - 15:00 น. -> Air 2 ทำงาน
+    else if (totalMinutes >= (14 * 60 + 30) && totalMinutes < (15 * 60)) {
+      airState.air2 = true;
+      airState.air3 = false;
+    }
+    // หลัง 15:00 น. เป็นต้นไป -> หยุดทำงานทั้งหมด (เวลาเลิกงาน)
+    else {
+      airState.air1 = false;
+      airState.air2 = false;
+      airState.air3 = false;
     }
   }
 
@@ -83,13 +126,11 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// API เปิด-ปิดโหมด Auto
 app.post('/api/toggle-auto', (req, res) => {
   autoScheduleEnabled = req.body.auto;
   res.json({ success: true, autoScheduleEnabled });
 });
 
-// API ควบคุมแอร์แบบ Manual (กรณีปิด Auto)
 app.post('/api/control', (req, res) => {
   const { air, state } = req.body;
   if (!autoScheduleEnabled && airState.hasOwnProperty(air)) {
@@ -100,10 +141,9 @@ app.post('/api/control', (req, res) => {
   }
 });
 
-// API ควบคุมทั้งหมด (เปิด/ปิดทั้งหมด)
 app.post('/api/control-all', (req, res) => {
   const state = req.body.state;
-  autoScheduleEnabled = false; // ปิด auto ชั่วคราวเมื่อกดควบคุมทั้งหมด
+  autoScheduleEnabled = false; 
   airState.air1 = state;
   airState.air2 = state;
   airState.air3 = state;
@@ -111,5 +151,5 @@ app.post('/api/control-all', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+  printMessage = `Server is running on http://localhost:${PORT}`;
 });
