@@ -3,38 +3,134 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LDR & Relay Control Dashboard</title>
+    <title>Smart Office Controller</title>
     <style>
-        body { font-family: sans-serif; text-align: center; margin-top: 30px; background: #f4f4f9; }
-        .card { background: white; padding: 20px; margin: 10px auto; width: 340px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .status-badge { padding: 8px 15px; font-size: 16px; border-radius: 5px; display: inline-block; color: white; background: #dc3545; }
-        .status-badge.active { background: #28a745; }
-        .time-box { font-size: 14px; color: #555; margin-bottom: 10px; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #0f172a; 
+            color: #f8fafc; 
+            display: flex; 
+            justify-content: center; 
+            margin: 0; 
+            padding: 20px; 
+        }
+        .container { 
+            width: 100%; 
+            max-width: 400px; 
+            background: #1e293b; 
+            padding: 20px; 
+            border-radius: 20px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
+        }
+        .header { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            margin-bottom: 20px; 
+        }
+        .header h2 { font-size: 20px; margin: 0; color: #38bdf8; line-height: 1.2; }
+        .online-badge { background: #22c55e; color: white; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+        
+        .card { background: #0f172a; border: 1px solid #334155; padding: 15px; border-radius: 15px; margin-bottom: 15px; }
+        .card-title { font-size: 14px; font-weight: bold; color: #38bdf8; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; }
+        .card-desc { font-size: 12px; color: #94a3b8; margin-bottom: 10px; }
+
+        .btn-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        .btn-all-on { flex: 1; background: #06b6d4; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: bold; cursor: pointer; }
+        .btn-all-off { flex: 1; background: #ef4444; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: bold; cursor: pointer; }
+
+        .device-card { display: flex; justify-content: space-between; align-items: center; background: #0f172a; border: 1px solid #334155; padding: 15px; border-radius: 15px; margin-bottom: 10px; }
+        .device-info { display: flex; align-items: center; gap: 12px; }
+        .device-icon { font-size: 24px; }
+        .device-name { font-size: 15px; font-weight: bold; margin: 0; }
+        .device-btu { font-size: 12px; color: #94a3b8; margin: 0; }
+
+        /* Toggle Switch Style */
+        .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #475569; transition: .3s; border-radius: 28px; }
+        .slider:before { position: absolute; content: ""; height: 22px; width: 22px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+        input:checked + .slider { background-color: #38bdf8; }
+        input:checked + .slider:before { transform: translateX(22px); }
+        
+        .info-text { font-size: 12px; color: #cbd5e1; margin-top: 5px; }
     </style>
 </head>
 <body>
-    <h1>ระบบควบคุมรีเลย์ (LDR Control)</h1>
-    <div class="time-box">เวลาประเทศไทย: <span id="thai-time">กำลังโหลด...</span></div>
-    
-    <div class="card">
-        <h3>ค่าแสงจาก LDR</h3>
-        <p id="ldr-val" style="font-size: 24px; font-weight: bold;">กำลังโหลด...</p>
-        <p>ผลเช็กแสงตอน 10:50 น.: <span id="sun-status">-</span></p>
-    </div>
+    <div class="container">
+        <div class="header">
+            <h2>🏢 SMART OFFICE<br>CONTROLLER</h2>
+            <div class="online-badge">ออนไลน์</div>
+        </div>
 
-    <div class="card">
-        <h3>รีเลย์ Pin 32 (ตัวที่ 1)</h3>
-        <div id="badge-relay1" class="status-badge">ปิดอยู่</div>
-    </div>
+        <div style="font-size: 12px; color: #94a3b8; margin-bottom: 10px; text-align: right;">
+            เวลาไทย: <span id="thai-time">-</span>
+        </div>
 
-    <div class="card">
-        <h3>รีเลย์ Pin 33 (ตัวที่ 2)</h3>
-        <div id="badge-relay2" class="status-badge">ปิดอยู่</div>
-    </div>
+        <!-- Auto Schedule Card -->
+        <div class="card">
+            <div class="card-title">⏰ โหมดทำงานอัตโนมัติตามเวลา (Auto Schedule)</div>
+            <div class="card-desc">ควบคุม Air 1, Air 2, Air 3 อัตโนมัติตามตารางและ LDR</div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span class="info-text" id="auto-status-text">สถานะ: เปิดใช้งาน</span>
+                <label class="switch">
+                    <input type="checkbox" id="auto-toggle" onchange="toggleAutoMode(this)">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="info-text" style="margin-top: 8px;">ค่าแสง LDR: <span id="ldr-val">-</span> | สถานะเช็ก 10:50: <span id="sun-status">-</span></div>
+        </div>
 
-    <div class="card">
-        <h3>รีเลย์ Pin 25 (ตัวที่ 3 - LDR Control)</h3>
-        <div id="badge-relay3" class="status-badge">ปิดอยู่</div>
+        <!-- Quick Control Buttons -->
+        <div class="btn-group">
+            <button class="btn-all-on" onclick="controlAll(true)">เปิดอุปกรณ์ทั้งหมด</button>
+            <button class="btn-all-off" onclick="controlAll(false)">ปิดอุปกรณ์ทั้งหมด</button>
+        </div>
+
+        <!-- Air 1 -->
+        <div class="device-card">
+            <div class="device-info">
+                <span class="device-icon">❄️</span>
+                <div>
+                    <p class="device-name">Air 1 (Pin 32)</p>
+                    <p class="device-btu">25,000 BTU (1 เฟส)</p>
+                </div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="air1-toggle" onchange="manualControl('air1', this.checked)">
+                <span class="slider"></span>
+            </label>
+        </div>
+
+        <!-- Air 2 -->
+        <div class="device-card">
+            <div class="device-info">
+                <span class="device-icon">❄️</span>
+                <div>
+                    <p class="device-name">Air 2 (Pin 33)</p>
+                    <p class="device-btu">25,000 BTU (1 เฟส)</p>
+                </div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="air2-toggle" onchange="manualControl('air2', this.checked)">
+                <span class="slider"></span>
+            </label>
+        </div>
+
+        <!-- Air 3 -->
+        <div class="device-card">
+            <div class="device-info">
+                <span class="device-icon">❄️</span>
+                <div>
+                    <p class="device-name">Air 3 (Pin 25)</p>
+                    <p class="device-btu">45,000 BTU (3 เฟส - LDR)</p>
+                </div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="air3-toggle" onchange="manualControl('air3', this.checked)">
+                <span class="slider"></span>
+            </label>
+        </div>
     </div>
 
     <script>
@@ -42,38 +138,64 @@
             try {
                 const res = await fetch('/api/status');
                 const data = await res.json();
-                
+
                 document.getElementById('thai-time').innerText = data.thaiTimeFormatted;
                 document.getElementById('ldr-val').innerText = data.ldrValue;
-                
+                document.getElementById('auto-toggle').checked = data.autoScheduleEnabled;
+                document.getElementById('auto-status-text').innerText = data.autoScheduleEnabled ? "สถานะ: ทำงานอัตโนมัติ (Active)" : "สถานะ: ปิดอัตโนมัติ (Manual)";
+
                 if (data.checkedToday) {
-                    document.getElementById('sun-status').innerText = data.isSunnyMorning 
-                        ? "แสงเพียงพอ (เปิดตัวที่ 3 ช่วง 11:00-14:00)" 
-                        : "แสงไม่เพียงพอ (ใช้ตัวที่ 1-2 ปกติ)";
+                    document.getElementById('sun-status').innerText = data.isSunnyMorning ? "แดดดี (เปิดแอร์ 3 ช่วง 11-14น.)" : "แดดน้อย (ใช้แอร์ 1-2)";
                 } else {
-                    document.getElementById('sun-status').innerText = "รอตรวจวัดเวลา 10:50 น.";
+                    document.getElementById('sun-status').innerText = "รอตรวจ 10:50 น.";
                 }
-                
-                updateStatusBadge('relay1', data.relayState.relay1);
-                updateStatusBadge('relay2', data.relayState.relay2);
-                updateStatusBadge('relay3', data.relayState.relay3);
-            } catch (error) {
-                console.error("Error fetching status:", error);
+
+                // อัปเดตสวิตช์แอร์แต่ละตัว
+                document.getElementById('air1-toggle').checked = data.airState.air1;
+                document.getElementById('air2-toggle').checked = data.airState.air2;
+                document.getElementById('air3-toggle').checked = data.airState.air3;
+
+                // ถ้าเปิด Auto ให้สวิตช์แบบ Manual ถูก disable หรือกดได้แต่จะเตือน
+            } catch (err) {
+                console.error("Error:", err);
             }
         }
 
-        function updateStatusBadge(relay, state) {
-            const badge = document.getElementById(`badge-${relay}`);
-            if (state) {
-                badge.innerText = "เปิดทำงาน";
-                badge.className = "status-badge active";
-            } else {
-                badge.innerText = "ปิดอยู่";
-                badge.className = "status-badge";
-            }
+        async function toggleAutoMode(checkbox) {
+            await fetch('/api/toggle-auto', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ auto: checkbox.checked })
+            });
+            fetchStatus();
         }
 
-        setInterval(fetchStatus, 2000); // อัปเดตข้อมูลทุก 2 วินาที
+        async function manualControl(air, state) {
+            const autoChecked = document.getElementById('auto-toggle').checked;
+            if (autoChecked) {
+                alert("กรุณาปิดโหมด Auto Schedule ก่อนควบคุมแบบ Manual ครับ");
+                fetchStatus();
+                return;
+            }
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ air, state })
+            });
+            fetchStatus();
+        }
+
+        async function controlAll(state) {
+            document.getElementById('auto-toggle').checked = false;
+            await fetch('/api/control-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ state })
+            });
+            fetchStatus();
+        }
+
+        setInterval(fetchStatus, 2000);
         fetchStatus();
     </script>
 </body>
