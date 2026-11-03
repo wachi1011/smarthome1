@@ -6,72 +6,80 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// เก็บค่า LDR ก่อน 11 โมง เพื่อใช้ตัดสินใจ
-let morningLdrRecorded = false;
-let isSunnyMorning = false; 
+// บันทึกสถานะว่าแสงพอดี ณ เวลา 10:50 น. หรือไม่
+let isSunnyMorning = false;
+let checkedToday = false; 
 
 // สถานะรีเลย์ 3 ตัว (Pin 32, 33, 25 ตามลำดับ)
 let relayState = {
-  relay1: false, // Pin 32
-  relay2: false, // Pin 33
-  relay3: false  // Pin 25 (ตัวที่ 3 ควบคุมด้วย LDR)
+  relay1: false, // Pin 32 (ทำงานพร้อม Pin 33)
+  relay2: false, // Pin 33 (ทำงานพร้อม Pin 32)
+  relay3: false  // Pin 25 (ควบคุมด้วย LDR)
 };
 
-// ฟังก์ชันจำลองเวลาและเงื่อนไขตามโจทย์
 function updateRelaySchedule() {
+  // ดึงเวลาปัจจุบันอิงตามเขตเวลาประเทศไทย (Asia/Bangkok)
   const now = new Date();
-  // สมมติเวลาปัจจุบัน (สามารถเปลี่ยนมาใช้เวลาจริงจากบอร์ด Hardware ได้)
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
+  const thaiTimeString = now.toLocaleString("en-US", { timeZone: "Asia/Bangkok" });
+  const thaiDate = new Date(thaiTimeString);
+
+  const hours = thaiDate.getHours();
+  const minutes = thaiDate.getMinutes();
   const currentTimeDecimal = hours + minutes / 60;
 
   // จำลองค่าแสง LDR (0 - 4095)
-  const ldrValue = Math.floor(Math.random() * 4096); 
+  const ldrValue = Math.floor(Math.random() * 4096);
+  const LDR_THRESHOLD = 2000; // ค่าความเข้มแสงที่ถือว่าเพียงพอ (ปรับได้ตามหน้างานจริง)
 
-  // 1. ตรวจสอบค่า LDR ก่อน 11:00 น. (เช่น ช่วง 10:00 - 11:00 น.)
-  if (hours === 10 && !morningLdrRecorded) {
-    if (ldrValue > 2000) { // สมมติค่า > 2000 คือแดดเยอะ
+  // 1. อ่านค่าแสง ณ เวลา 10:50 น. พอดี (ช่วง 10:50 - 10:59 น.)
+  if (hours === 10 && minutes >= 50 && !checkedToday) {
+    if (ldrValue >= LDR_THRESHOLD) {
       isSunnyMorning = true;
     } else {
       isSunnyMorning = false;
     }
-    morningLdrRecorded = true;
+    checkedToday = true; // บันทึกว่าเช็กแล้ววันนี้
   }
 
-  // รีเซ็ตค่าบันทึกตอนเที่ยงคืน เพื่อให้วัดใหม่ในวันถัดไป
-  if (hours === 0) {
-    morningLdrRecorded = false;
+  // รีเซ็ตการเช็กเมื่อเริ่มต้นวันใหม่ (เที่ยงคืน)
+  if (hours === 0 && minutes === 0) {
+    checkedToday = false;
+    isSunnyMorning = false;
   }
 
-  // 2. ควบคุมรีเลย์ตัวที่ 3 (ช่วง 11:00 - 14:00 น.)
+  // 2. เงื่อนไขการทำงานช่วง 11:00 - 14:00 น.
   if (currentTimeDecimal >= 11.0 && currentTimeDecimal < 14.0) {
     if (isSunnyMorning) {
-      // ถ้าแดดดีก่อน 11 โมง ให้รีเลย์ตัวที่ 3 ทำงานในช่วงนี้
+      // แสงพอตอน 10:50 น. -> ตัวที่ 3 ทำงาน / ตัวที่ 1 และ 2 ปิด
       relayState.relay3 = true;
       relayState.relay1 = false;
       relayState.relay2 = false;
     } else {
-      // ถ้าแดดไม่เยอะ ให้รีเลย์ 1 และ 2 ทำงานปกติตามตาราง
+      // แสงไม่พอ -> ตัวที่ 3 ปิด / ตัวที่ 1 และ 2 ทำงานพร้อมกันปกติ
       relayState.relay3 = false;
-      // ตัวอย่างการสลับการทำงาน 1 และ 2 ตามช่วงเวลา
-      relayState.relay1 = Math.floor(currentTimeDecimal) % 2 === 0;
-      relayState.relay2 = !relayState.relay1;
+      relayState.relay1 = true;
+      relayState.relay2 = true;
     }
   } else {
-    // นอกช่วง 11:00 - 14:00 น. ให้รีเลย์ตัวที่ 3 ปิด และ 1, 2 สลับทำงานตามตารางปกติ
+    // นอกช่วง 11:00 - 14:00 น. -> ตัวที่ 3 ปิด / ตัวที่ 1 และ 2 ทำงานพร้อมกันตามตารางปกติ
     relayState.relay3 = false;
-    relayState.relay1 = Math.floor(currentTimeDecimal * 2) % 2 === 0;
-    relayState.relay2 = !relayState.relay1;
+    
+    // ตัวอย่าง: เปิดทำงานพร้อมกันทุกๆ ครึ่งชั่วโมง สลับ ปิด (หรือปรับตามตารางเวลาจริงได้)
+    const isWorkingPeriod = Math.floor(currentTimeDecimal * 2) % 2 === 0;
+    relayState.relay1 = isWorkingPeriod;
+    relayState.relay2 = isWorkingPeriod;
   }
 
-  return ldrValue;
+  return { ldrValue, thaiTimeFormatted: thaiDate.toLocaleTimeString('th-TH') };
 }
 
 app.get('/api/status', (req, res) => {
-  const ldrValue = updateRelaySchedule();
+  const { ldrValue, thaiTimeFormatted } = updateRelaySchedule();
   res.json({
     ldrValue,
+    thaiTimeFormatted,
     isSunnyMorning,
+    checkedToday,
     relayState
   });
 });
