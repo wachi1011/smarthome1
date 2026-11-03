@@ -6,18 +6,20 @@
     <title>LDR & Relay Control Dashboard</title>
     <style>
         body { font-family: sans-serif; text-align: center; margin-top: 30px; background: #f4f4f9; }
-        .card { background: white; padding: 20px; margin: 10px auto; width: 320px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .card { background: white; padding: 20px; margin: 10px auto; width: 340px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .status-badge { padding: 8px 15px; font-size: 16px; border-radius: 5px; display: inline-block; color: white; background: #dc3545; }
         .status-badge.active { background: #28a745; }
+        .time-box { font-size: 14px; color: #555; margin-bottom: 10px; }
     </style>
 </head>
 <body>
     <h1>ระบบควบคุมรีเลย์ (LDR Control)</h1>
+    <div class="time-box">เวลาประเทศไทย: <span id="thai-time">กำลังโหลด...</span></div>
     
     <div class="card">
         <h3>ค่าแสงจาก LDR</h3>
         <p id="ldr-val" style="font-size: 24px; font-weight: bold;">กำลังโหลด...</p>
-        <p>สถานะแดดก่อน 11 โมง: <span id="sun-status">-</span></p>
+        <p>ผลเช็กแสงตอน 10:50 น.: <span id="sun-status">-</span></p>
     </div>
 
     <div class="card">
@@ -41,8 +43,16 @@
                 const res = await fetch('/api/status');
                 const data = await res.json();
                 
+                document.getElementById('thai-time').innerText = data.thaiTimeFormatted;
                 document.getElementById('ldr-val').innerText = data.ldrValue;
-                document.getElementById('sun-status').innerText = data.isSunnyMorning ? "แดดดี (มีผลช่วง 11:00-14:00)" : "แดดน้อย/ปกติ";
+                
+                if (data.checkedToday) {
+                    document.getElementById('sun-status').innerText = data.isSunnyMorning 
+                        ? "แสงเพียงพอ (เปิดตัวที่ 3 ช่วง 11:00-14:00)" 
+                        : "แสงไม่เพียงพอ (ใช้ตัวที่ 1-2 ปกติ)";
+                } else {
+                    document.getElementById('sun-status').innerText = "รอตรวจวัดเวลา 10:50 น.";
+                }
                 
                 updateStatusBadge('relay1', data.relayState.relay1);
                 updateStatusBadge('relay2', data.relayState.relay2);
