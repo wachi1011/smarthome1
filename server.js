@@ -17,7 +17,6 @@ let airState = {
 };
 
 function updateSchedule() {
-  // ดึงเวลาประเทศไทยจริง (UTC+7)
   const now = new Date();
   const thaiTimeString = now.toLocaleString("en-US", { timeZone: "Asia/Bangkok" });
   const thaiDate = new Date(thaiTimeString);
@@ -30,7 +29,7 @@ function updateSchedule() {
   const ldrValue = Math.floor(Math.random() * 4096);
   const LDR_THRESHOLD = 2000; 
 
-  // 1. ตรวจสอบค่าแสงตอน 10:50 น. พอดี เพื่อเตรียมพร้อมสำหรับ Air 3 ช่วง 11:30 - 14:00 น.
+  // 1. ตรวจสอบค่าแสงตอน 10:50 น. พอดี
   if (hours === 10 && minutes >= 50 && !checkedToday) {
     isSunnyMorning = (ldrValue >= LDR_THRESHOLD);
     checkedToday = true;
@@ -42,100 +41,64 @@ function updateSchedule() {
     isSunnyMorning = false;
   }
 
-  // ค่าเริ่มต้นตั้งแต่นอกเวลาทำงาน (ก่อน 08:00 หรือหลัง 16:00 น.) คือปิดทั้งหมด (หยุดพักเลิกงาน)
-  airState.air1 = false;
-  airState.air2 = false;
-  airState.air3 = false;
+  // ค่าเริ่มต้นตั้งต้นเป็นปิดทั้งหมด
+  let on1 = false;
+  let on2 = false;
+  let on3 = false;
 
   // ถือว่าอยู่ในช่วงเวลาทำงาน (08:00 - 16:00 น.) และเปิดโหมด Auto Schedule
   if (autoScheduleEnabled && currentTimeDecimal >= 8.0 && currentTimeDecimal <= 16.0) {
     
-    // 08:00 - 08:30 น. -> Air 1 ทำงาน
-    if (currentTimeDecimal >= 8.0 && currentTimeDecimal < 8.5) {
-      airState.air1 = true;
-      airState.air2 = false;
-      airState.air3 = false;
+    // --- 1. เงื่อนไขการทำงานของ Air 1 ---
+    if (
+      (currentTimeDecimal >= 8.0 && currentTimeDecimal < 8.5) ||
+      (currentTimeDecimal >= 9.0 && currentTimeDecimal < 9.5) ||
+      (currentTimeDecimal >= 10.0 && currentTimeDecimal < 11.0) ||
+      (currentTimeDecimal >= 14.0 && currentTimeDecimal < 14.5) ||
+      (currentTimeDecimal >= 15.5 && currentTimeDecimal <= 16.0)
+    ) {
+      on1 = true;
     }
-    // 08:30 - 09:00 น. -> Air 2 ทำงาน
-    else if (currentTimeDecimal >= 8.5 && currentTimeDecimal < 9.0) {
-      airState.air1 = false;
-      airState.air2 = true;
-      airState.air3 = false;
+
+    // --- 2. เงื่อนไขการทำงานของ Air 2 (รองรับช่วงเวลาทับซ้อนได้อย่างอิสระ) ---
+    if (
+      (currentTimeDecimal >= 8.5 && currentTimeDecimal < 9.0) ||
+      (currentTimeDecimal >= 9.5 && currentTimeDecimal < 10.0) ||
+      (currentTimeDecimal >= 10.5 && currentTimeDecimal < 11.5) ||
+      (currentTimeDecimal >= 12.0 && currentTimeDecimal < 14.5) ||
+      (currentTimeDecimal >= 15.0 && currentTimeDecimal < 15.5)
+    ) {
+      on2 = true;
     }
-    // 09:00 - 09:30 น. -> Air 1 ทำงาน
-    else if (currentTimeDecimal >= 9.0 && currentTimeDecimal < 9.5) {
-      airState.air1 = true;
-      airState.air2 = false;
-      airState.air3 = false;
-    }
-    // 09:30 - 10:00 น. -> Air 2 ทำงาน
-    else if (currentTimeDecimal >= 9.5 && currentTimeDecimal < 10.0) {
-      airState.air1 = false;
-      airState.air2 = true;
-      airState.air3 = false;
-    }
-    // 10:00 - 11:00 น. -> Air 1 ทำงานยาว
-    else if (currentTimeDecimal >= 10.0 && currentTimeDecimal < 11.0) {
-      airState.air1 = true;
-      airState.air2 = false;
-      airState.air3 = false;
-    }
-    // 10:30 - 11:30 น. -> Air 2 ทำงานร่วมด้วยในช่วงนี้ (ทับซ้อนตามโจทย์)
-    else if (currentTimeDecimal >= 10.5 && currentTimeDecimal < 11.5) {
-      // ช่วง 10.30-11.00 Air 1 และ Air 2 อาจทำงานร่วมกัน
-      if (currentTimeDecimal < 11.0) {
-        airState.air1 = true;
+
+    // --- 3. เงื่อนไขการทำงานของ Air 3 (อิง LDR ตอน 10:50 น.) ---
+    if (isSunnyMorning) {
+      // ถ้าแดดดี Air 3 จะทำงานในช่วง 11:30-14:00 และ 14:30-15:30
+      if (
+        (currentTimeDecimal >= 11.5 && currentTimeDecimal < 14.0) ||
+        (currentTimeDecimal >= 14.5 && currentTimeDecimal < 15.5)
+      ) {
+        on3 = true;
       }
-      airState.air2 = true;
-      airState.air3 = false;
-    }
-    // 11:30 - 14:00 น. -> Air 3 ทำงาน (อิงหลักการ LDR ที่เช็กตอน 10:50 น.)
-    else if (currentTimeDecimal >= 11.5 && currentTimeDecimal < 14.0) {
-      if (isSunnyMorning) {
-        airState.air3 = true; // แดดดี เปิด Air 3
-        airState.air1 = false;
-        airState.air2 = false;
-      } else {
-        // ถ้าแดดไม่พอ ให้ Air 1 และ Air 2 ทำงานสำรองแทน
-        airState.air3 = false;
-        airState.air1 = true;
-        airState.air2 = true;
+    } else {
+      // ถ้าแดดไม่พอ ให้ Air 1 และ Air 2 ทำงานสำรองแทนในช่วงเวลาดังกล่าว
+      if (
+        (currentTimeDecimal >= 11.5 && currentTimeDecimal < 14.0) ||
+        (currentTimeDecimal >= 14.5 && currentTimeDecimal < 15.5)
+      ) {
+        on1 = true;
+        on2 = true;
       }
-    }
-    // 12:00 - 14:30 น. -> Air 2 ทำงานร่วมในช่วงนี้ด้วย
-    else if (currentTimeDecimal >= 12.0 && currentTimeDecimal < 14.5) {
-      airState.air2 = true;
-      // Air 3 ยังคงทำงานอยู่หากอยู่ในช่วง 11.30-14.00 หลังจากนั้น Air 3 จะเปลี่ยนสถานะตามช่วงถัดไป
-      if (currentTimeDecimal >= 14.0) {
-        airState.air3 = false;
-      }
-    }
-    // 14:00 - 14:30 น. -> สลับ Air 1 มาทำงานแทน Air 3
-    else if (currentTimeDecimal >= 14.0 && currentTimeDecimal < 14.5) {
-      airState.air1 = true;
-      airState.air3 = false;
-    }
-    // 14:30 - 15:30 น. -> Air 3 กลับมาทำงาน
-    else if (currentTimeDecimal >= 14.5 && currentTimeDecimal < 15.5) {
-      airState.air3 = true;
-      airState.air1 = false;
-      airState.air2 = false;
-    }
-    // 15:00 - 15:30 น. -> Air 2 ทำงานในช่วงนี้ร่วมด้วย
-    else if (currentTimeDecimal >= 15.0 && currentTimeDecimal < 15.5) {
-      airState.air2 = true;
-    }
-    // 15:30 - 16:00 น. -> สลับให้ Air 1 ทำงาน
-    else if (currentTimeDecimal >= 15.5 && currentTimeDecimal <= 16.0) {
-      airState.air1 = true;
-      airState.air2 = false;
-      airState.air3 = false;
     }
   }
 
+  // อัปเดตสถานะกลับเข้าไปยังตัวแปรหลัก
+  airState.air1 = on1;
+  airState.air2 = on2;
+  airState.air3 = on3;
+
   return { ldrValue, thaiTimeFormatted: thaiDate.toLocaleTimeString('th-TH') };
 }
-
 // API ดึงสถานะ
 app.get('/api/status', (req, res) => {
   const { ldrValue, thaiTimeFormatted } = updateSchedule();
