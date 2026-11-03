@@ -6,19 +6,18 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-// บันทึกสถานะว่าแสงพอดี ณ เวลา 10:50 น. หรือไม่
+// ตัวแปรควบคุมโหมด Auto Schedule และสถานะแอร์
+let autoScheduleEnabled = true; 
 let isSunnyMorning = false;
 let checkedToday = false; 
 
-// สถานะรีเลย์ 3 ตัว (Pin 32, 33, 25 ตามลำดับ)
-let relayState = {
-  relay1: false, // Pin 32 (ทำงานพร้อม Pin 33)
-  relay2: false, // Pin 33 (ทำงานพร้อม Pin 32)
-  relay3: false  // Pin 25 (ควบคุมด้วย LDR)
+let airState = {
+  air1: false, // Pin 32
+  air2: false, // Pin 33
+  air3: false  // Pin 25 (ควบคุมด้วย LDR ช่วง 11:00-14:00)
 };
 
-function updateRelaySchedule() {
-  // ดึงเวลาปัจจุบันอิงตามเขตเวลาประเทศไทย (Asia/Bangkok)
+function updateSchedule() {
   const now = new Date();
   const thaiTimeString = now.toLocaleString("en-US", { timeZone: "Asia/Bangkok" });
   const thaiDate = new Date(thaiTimeString);
@@ -29,59 +28,86 @@ function updateRelaySchedule() {
 
   // จำลองค่าแสง LDR (0 - 4095)
   const ldrValue = Math.floor(Math.random() * 4096);
-  const LDR_THRESHOLD = 2000; // ค่าความเข้มแสงที่ถือว่าเพียงพอ (ปรับได้ตามหน้างานจริง)
+  const LDR_THRESHOLD = 2000; 
 
-  // 1. อ่านค่าแสง ณ เวลา 10:50 น. พอดี (ช่วง 10:50 - 10:59 น.)
+  // 1. ตรวจสอบค่าแสงตอน 10:50 น. พอดี
   if (hours === 10 && minutes >= 50 && !checkedToday) {
-    if (ldrValue >= LDR_THRESHOLD) {
-      isSunnyMorning = true;
-    } else {
-      isSunnyMorning = false;
-    }
-    checkedToday = true; // บันทึกว่าเช็กแล้ววันนี้
+    isSunnyMorning = (ldrValue >= LDR_THRESHOLD);
+    checkedToday = true;
   }
 
-  // รีเซ็ตการเช็กเมื่อเริ่มต้นวันใหม่ (เที่ยงคืน)
+  // รีเซ็ตสถานะตอนเที่ยงคืน
   if (hours === 0 && minutes === 0) {
     checkedToday = false;
     isSunnyMorning = false;
   }
 
-  // 2. เงื่อนไขการทำงานช่วง 11:00 - 14:00 น.
-  if (currentTimeDecimal >= 11.0 && currentTimeDecimal < 14.0) {
-    if (isSunnyMorning) {
-      // แสงพอตอน 10:50 น. -> ตัวที่ 3 ทำงาน / ตัวที่ 1 และ 2 ปิด
-      relayState.relay3 = true;
-      relayState.relay1 = false;
-      relayState.relay2 = false;
+  // ถ้าเปิดโหมด Auto Schedule ให้คำนวณตามเวลาและ LDR
+  if (autoScheduleEnabled) {
+    // ช่วง 11:00 - 14:00 น.
+    if (currentTimeDecimal >= 11.0 && currentTimeDecimal < 14.0) {
+      if (isSunnyMorning) {
+        // แสงดี -> เปิด Air 3 / ปิด Air 1, Air 2
+        airState.air3 = true;
+        airState.air1 = false;
+        airState.air2 = false;
+      } else {
+        // แสงน้อย -> ปิด Air 3 / เปิด Air 1 และ Air 2 พร้อมกัน
+        airState.air3 = false;
+        airState.air1 = true;
+        airState.air2 = true;
+      }
     } else {
-      // แสงไม่พอ -> ตัวที่ 3 ปิด / ตัวที่ 1 และ 2 ทำงานพร้อมกันปกติ
-      relayState.relay3 = false;
-      relayState.relay1 = true;
-      relayState.relay2 = true;
+      // นอกช่วง 11:00 - 14:00 น. (เช่นช่วงอื่นๆ ตามตารางกราฟ)
+      airState.air3 = false;
+      // Air 1 และ Air 2 ทำงานสลับหรือพร้อมกันตามช่วงเวลาในกราฟ
+      const activePeriod = Math.floor(currentTimeDecimal * 2) % 2 === 0;
+      airState.air1 = activePeriod;
+      airState.air2 = activePeriod;
     }
-  } else {
-    // นอกช่วง 11:00 - 14:00 น. -> ตัวที่ 3 ปิด / ตัวที่ 1 และ 2 ทำงานพร้อมกันตามตารางปกติ
-    relayState.relay3 = false;
-    
-    // ตัวอย่าง: เปิดทำงานพร้อมกันทุกๆ ครึ่งชั่วโมง สลับ ปิด (หรือปรับตามตารางเวลาจริงได้)
-    const isWorkingPeriod = Math.floor(currentTimeDecimal * 2) % 2 === 0;
-    relayState.relay1 = isWorkingPeriod;
-    relayState.relay2 = isWorkingPeriod;
   }
 
   return { ldrValue, thaiTimeFormatted: thaiDate.toLocaleTimeString('th-TH') };
 }
 
+// API ดึงสถานะ
 app.get('/api/status', (req, res) => {
-  const { ldrValue, thaiTimeFormatted } = updateRelaySchedule();
+  const { ldrValue, thaiTimeFormatted } = updateSchedule();
   res.json({
     ldrValue,
     thaiTimeFormatted,
+    autoScheduleEnabled,
     isSunnyMorning,
     checkedToday,
-    relayState
+    airState
   });
+});
+
+// API เปิด-ปิดโหมด Auto
+app.post('/api/toggle-auto', (req, res) => {
+  autoScheduleEnabled = req.body.auto;
+  res.json({ success: true, autoScheduleEnabled });
+});
+
+// API ควบคุมแอร์แบบ Manual (กรณีปิด Auto)
+app.post('/api/control', (req, res) => {
+  const { air, state } = req.body;
+  if (!autoScheduleEnabled && airState.hasOwnProperty(air)) {
+    airState[air] = state;
+    res.json({ success: true, airState });
+  } else {
+    res.status(400).json({ success: false, message: 'Auto mode is enabled or invalid device' });
+  }
+});
+
+// API ควบคุมทั้งหมด (เปิด/ปิดทั้งหมด)
+app.post('/api/control-all', (req, res) => {
+  const state = req.body.state;
+  autoScheduleEnabled = false; // ปิด auto ชั่วคราวเมื่อกดควบคุมทั้งหมด
+  airState.air1 = state;
+  airState.air2 = state;
+  airState.air3 = state;
+  res.json({ success: true, airState, autoScheduleEnabled });
 });
 
 app.listen(PORT, () => {
